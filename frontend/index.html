@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mohali Change Detection — Urban Growth & Tax Assessment</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #060d1f;
+      --surface:    rgba(10, 18, 40, 0.92);
+      --surface2:   rgba(15, 25, 55, 0.88);
+      --border:     rgba(56, 189, 248, 0.18);
+      --accent:     #38bdf8;
+      --green:      #22c55e;
+      --red:        #ef4444;
+      --orange:     #f97316;
+      --text:       #e2e8f0;
+      --text-muted: #64748b;
+      --text-dim:   #94a3b8;
+      --glow:       0 0 24px rgba(56, 189, 248, 0.25);
+      --panel-r:    12px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg); color: var(--text); overflow: hidden;
+    }
+
+    #app { position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Header ──────────────────────────────── */
+    #header {
+      flex-shrink: 0; height: 56px; background: var(--surface);
+      border-bottom: 1px solid var(--border); backdrop-filter: blur(12px);
+      display: flex; align-items: center; padding: 0 18px; gap: 14px; z-index: 2000;
+    }
+    #header .logo { font-size: 1.15rem; font-weight: 700; color: var(--accent); letter-spacing: -0.02em; }
+    #header .subtitle { font-size: 0.72rem; color: var(--text-muted); }
+    #header .divider { flex: 1; }
+
+    /* ── Controls bar ────────────────────────── */
+    #controls-bar {
+      flex-shrink: 0; height: 54px; background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 18px; gap: 14px; z-index: 1999;
+      flex-wrap: nowrap; overflow-x: auto;
+    }
+    .ctrl-group { display: flex; align-items: center; gap: 6px; }
+    .ctrl-label {
+      font-size: 0.65rem; font-weight: 600; color: var(--text-muted);
+      letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+    }
+
+    select {
+      padding: 5px 9px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); font-size: 0.8rem; font-family: inherit; cursor: pointer;
+    }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-dim); font-size: 0.75rem;
+      font-weight: 500; font-family: inherit; cursor: pointer;
+      transition: all 0.18s ease; white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(56,189,248,0.08); }
+    .btn.active {
+      background: rgba(56,189,248,0.15); border-color: var(--accent);
+      color: var(--accent); box-shadow: 0 0 10px rgba(56,189,248,0.2);
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: rgba(56,189,248,0.15); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+    .btn-download { background: rgba(34,197,94,0.12); border-color: var(--green); color: var(--green); }
+
+    .sep { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
+
+    #status-msg { font-size: 0.72rem; color: var(--text-muted); margin-left: auto; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+
+    /* ── Map ──────────────────────────────────── */
+    #map-container { flex: 1; position: relative; overflow: hidden; min-height: 0; }
+    #map { width: 100%; height: 100%; }
+    .leaflet-container { background: #0a1628; }
+    .leaflet-control-zoom a { background: var(--surface) !important; border-color: var(--border) !important; color: var(--text) !important; }
+    .leaflet-control-zoom a:hover { background: rgba(56,189,248,0.15) !important; color: var(--accent) !important; }
+    .leaflet-control-attribution { background: rgba(6,13,31,0.85) !important; color: var(--text-muted) !important; font-size: 0.62rem !important; }
+
+    /* ── Modern Swipe Divider & Handle ────────────────── */
+    .custom-swipe-container {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 900;
+      overflow: hidden;
+    }
+    .custom-swipe-divider {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 44px;
+      margin-left: -22px;
+      cursor: ew-resize;
+      pointer-events: auto;
+      user-select: none;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    .custom-swipe-line {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 3px;
+      transform: translateX(-50%);
+      background: linear-gradient(to bottom, transparent 0%, var(--accent) 15%, var(--accent) 85%, transparent 100%);
+      box-shadow: 0 0 14px rgba(56, 189, 248, 0.8), 0 0 4px rgba(56, 189, 248, 1);
+      pointer-events: none;
+    }
+    .custom-swipe-handle {
+      position: relative;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      box-shadow: var(--glow), 0 4px 16px rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: ew-resize;
+      pointer-events: auto;
+      user-select: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      z-index: 2;
+      outline: none;
+    }
+    .custom-swipe-handle:focus-visible {
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.5), var(--glow);
+    }
+    .custom-swipe-handle svg {
+      width: 20px;
+      height: 20px;
+      color: var(--accent);
+      pointer-events: none;
+      transition: color 0.15s ease;
+    }
+    .custom-swipe-divider:hover .custom-swipe-handle {
+      transform: scale(1.1);
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.9), 0 6px 20px rgba(0, 0, 0, 0.7);
+    }
+    .custom-swipe-divider.dragging .custom-swipe-handle {
+      transform: scale(1.18);
+      border-color: #7dd3fc;
+      box-shadow: 0 0 32px rgba(125, 211, 252, 1), 0 6px 24px rgba(0, 0, 0, 0.85);
+    }
+    .custom-swipe-divider.dragging .custom-swipe-line {
+      box-shadow: 0 0 20px rgba(125, 211, 252, 1), 0 0 8px rgba(56, 189, 248, 1);
+    }
+
+    /* Year labels */
+    .year-label {
+      position: absolute; top: 12px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 5px 14px; font-size: 0.78rem; font-weight: 600;
+      color: var(--accent); letter-spacing: 0.03em; z-index: 500;
+      pointer-events: none; backdrop-filter: blur(8px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+    #label-left  { left: 16px; }
+    #label-right { right: 16px; }
+
+    /* ── Floating panels ─────────────────────── */
+    .floating-panel {
+      position: absolute; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--panel-r);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--glow), 0 8px 32px rgba(0,0,0,0.5);
+      z-index: 1000; overflow: hidden; min-width: 220px;
+    }
+    .floating-panel .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 12px; background: rgba(56,189,248,0.06);
+      border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
+    }
+    .floating-panel .panel-title {
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--accent);
+    }
+    .floating-panel .panel-toggle { font-size: 0.7rem; color: var(--text-muted); transition: transform 0.2s; }
+    .floating-panel.collapsed .panel-toggle { transform: rotate(180deg); }
+    .floating-panel.collapsed .panel-body { display: none; }
+    .panel-body { padding: 10px 12px; }
+
+    #stats-panel { bottom: 14px; right: 14px; width: 240px; }
+    .stat-row { display: flex; justify-content: space-between; font-size: 0.76rem; padding: 4px 0; }
+    .stat-label-s { color: var(--text-dim); }
+    .stat-value { font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+
+    /* Defaulter results panel */
+    #defaulter-panel { top: 60px; left: 14px; width: 300px; max-height: 70vh; overflow-y: auto; display: none; }
+    #defaulter-panel.visible { display: block; }
+    .def-cat { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(56,189,248,0.1); }
+    .def-cat:last-child { border-bottom: none; }
+    .def-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-right: 8px; }
+    .def-label { font-size: 0.72rem; color: var(--text-dim); flex: 1; }
+    .def-count { font-size: 0.85rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; min-width: 40px; text-align: right; }
+
+    #legend-panel { bottom: 14px; left: 14px; width: 230px; }
+    .legend-item { display: flex; align-items: center; gap: 7px; font-size: 0.72rem; color: var(--text-dim); margin-bottom: 4px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+    /* Layers panel */
+    #layers-panel { top: 60px; right: 14px; width: 210px; }
+    .layer-toggle { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--text-dim); padding: 4px 0; cursor: pointer; }
+    .layer-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+    /* ── Loading overlay ──────────────────────── */
+    #loading-overlay {
+      position: absolute; inset: 0; background: rgba(6,13,31,0.65);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 1500; backdrop-filter: blur(4px);
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    #loading-overlay.visible { opacity: 1; pointer-events: all; }
+    .spinner {
+      width: 42px; height: 42px; border: 3px solid rgba(56,189,248,0.2);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite; margin-bottom: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: 0.82rem; color: var(--text-dim); letter-spacing: 0.05em; text-align: center; }
+
+    /* Error toast */
+    #error-toast {
+      position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5);
+      color: #fca5a5; font-size: 0.78rem; padding: 9px 18px; border-radius: 8px;
+      z-index: 2000; opacity: 0; pointer-events: none; transition: all 0.3s ease;
+      backdrop-filter: blur(8px);
+    }
+    #error-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Leaflet popup dark theme */
+    .leaflet-popup-content-wrapper {
+      background: #0f172a !important;
+      color: #f1f5f9 !important;
+      border: 1px solid #334155;
+      border-radius: 8px !important;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7) !important;
+    }
+    .leaflet-popup-tip {
+      background: #0f172a !important;
+    }
+    .leaflet-popup-close-button {
+      color: #94a3b8 !important;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Header -->
+  <header id="header">
+    <span style="font-size:1.2rem;">🛰</span>
+    <div>
+      <div class="logo">Mohali Change Detection</div>
+      <div class="subtitle">High-Res Satellite (0.3m) · Earth Engine · Defaulters & Under-Assessment Identification · Punjab</div>
+    </div>
+    <div class="divider"></div>
+  </header>
+
+  <!-- Controls bar -->
+  <div id="controls-bar">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Year 1</span>
+      <select id="sel-year1">
+        <option value="2014" selected>2014 (Survey Baseline)</option>
+        <option value="2016">2016</option>
+        <option value="2017">2017</option>
+        <option value="2018">2018</option>
+        <option value="2019">2019</option>
+        <option value="2020">2020</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <span class="ctrl-label">Year 2</span>
+      <select id="sel-year2">
+        <option value="2026">2026 (Latest Snapshot)</option>
+        <option value="2025" selected>2025</option>
+        <option value="2024">2024</option>
+        <option value="2023">2023</option>
+        <option value="2022">2022</option>
+        <option value="2020">2020</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <span class="ctrl-label">Imagery</span>
+      <select id="sel-source">
+        <option value="highres" selected>High-Res (0.3m Maxar)</option>
+        <option value="analysis">Analysis (Sentinel-2 / Landsat)</option>
+      </select>
+    </div>
+
+    <button class="btn btn-primary" id="btn-detect">🔍 Detect Change</button>
+    <button class="btn" id="btn-defaulters" disabled style="border-color:#f97316;color:#f97316;">🎯 Identify Defaulters</button>
+    <button class="btn btn-download" id="btn-download" disabled>📥 Download SHP</button>
+    <button class="btn" id="btn-export-csv" disabled style="border-color:#22c55e;color:#22c55e;">📊 Export CSV</button>
+
+    <div class="sep"></div>
+
+    <div id="status-msg">Ready — select years and click Detect Change</div>
+  </div>
+
+  <!-- Map area -->
+  <div id="map-container">
+    <div id="map"></div>
+
+    <div class="year-label" id="label-left">Year 1</div>
+    <div class="year-label" id="label-right">Year 2</div>
+
+    <!-- Loading overlay -->
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loading-text">Loading satellite imagery…</div>
+    </div>
+
+    <!-- Error toast -->
+    <div id="error-toast"></div>
+
+    <!-- Layers panel (top-right) -->
+    <div class="floating-panel" id="layers-panel">
+      <div class="panel-header" onclick="togglePanel('layers-panel')">
+        <span class="panel-title">🗂 Layers</span>
+        <span class="panel-toggle">▲</span>
+      </div>
+      <div class="panel-body">
+        <label class="layer-toggle"><input type="checkbox" id="chk-mask" checked> Change Polygons (&gt; 0.5ha)</label>
+        <label class="layer-toggle"><input type="checkbox" id="chk-parcels" checked> Survey Parcels in Change Areas</label>
+        <label class="layer-toggle"><input type="checkbox" id="chk-boundary" checked> Municipal Boundary</label>
+      </div>
+    </div>
+
+    <!-- Stats panel (bottom-right) -->
+    <div class="floating-panel" id="stats-panel" style="display:none;">
+      <div class="panel-header" onclick="togglePanel('stats-panel')">
+        <span class="panel-title">📊 Change Detection</span>
+        <span class="panel-toggle">▲</span>
+      </div>
+      <div class="panel-body" id="stats-body">
+        <div class="stat-row"><span class="stat-label-s">Clusters</span><span class="stat-value" id="s-clusters">—</span></div>
+        <div class="stat-row"><span class="stat-label-s">Period</span><span class="stat-value" id="s-period">—</span></div>
+      </div>
+    </div>
+
+    <!-- Defaulter results panel (top-left) -->
+    <div class="floating-panel" id="defaulter-panel">
+      <div class="panel-header" onclick="togglePanel('defaulter-panel')">
+        <span class="panel-title">🎯 Defaulters & Under-Assessment</span>
+        <span class="panel-toggle">▲</span>
+      </div>
+      <div class="panel-body" id="defaulter-body">
+        <div style="font-size:0.65rem;color:var(--text-muted);margin-bottom:8px;">
+          Multi-Tier Breakdown (Pipeline 1 + Satellite Change)
+        </div>
+        <div class="def-cat">
+          <span class="def-dot" style="background:#f97316"></span>
+          <span class="def-label">New Construction (Set 2)</span>
+          <span class="def-count" id="dc-new" style="color:#f97316">—</span>
+        </div>
+        <div class="def-cat">
+          <span class="def-dot" style="background:#ef4444"></span>
+          <span class="def-label">Legacy Built-Up (Set 1)</span>
+          <span class="def-count" id="dc-legacy" style="color:#ef4444">—</span>
+        </div>
+        <div class="def-cat">
+          <span class="def-dot" style="background:#eab308"></span>
+          <span class="def-label">Under-Assessed (In Tax)</span>
+          <span class="def-count" id="dc-under" style="color:#eab308">—</span>
+        </div>
+        <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+          <div class="stat-row"><span class="stat-label-s">Total Flagged in Change</span><span class="stat-value" id="dc-total-flagged">—</span></div>
+          <div class="stat-row"><span class="stat-label-s">Vacant Checked</span><span class="stat-value" id="dc-candidates">—</span></div>
+          <div class="stat-row"><span class="stat-label-s">Total City Parcels</span><span class="stat-value" id="dc-intax">—</span></div>
+        </div>
+        <div id="dc-by-usage" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:0.7rem;color:var(--text-dim);"></div>
+      </div>
+    </div>
+
+    <!-- Legend panel (bottom-left) -->
+    <div class="floating-panel" id="legend-panel">
+      <div class="panel-header" onclick="togglePanel('legend-panel')">
+        <span class="panel-title">🗺 Legend</span>
+        <span class="panel-toggle">▲</span>
+      </div>
+      <div class="panel-body">
+        <div style="font-size:0.65rem;font-weight:600;color:var(--accent);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">Parcel Tax Status</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#f97316"></span>New Construction Defaulter (Set 2)</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>Legacy Built-Up Defaulter (Set 1)</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#eab308"></span>Under-Assessed (Zero-Tax in mSeva)</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span>In Tax Net (Compliant Built-Up)</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#94a3b8"></span>Exempt Property</div>
+        <div style="font-size:0.65rem;font-weight:600;color:var(--accent);margin:10px 0 6px 0;text-transform:uppercase;letter-spacing:0.05em;">Overlays</div>
+        <div class="legend-item"><span class="legend-dot" style="background:rgba(239,68,68,0.7);border-radius:2px;"></span>Red Mask (&gt; 0.5ha Change)</div>
+        <div class="legend-item"><span class="legend-dot" style="border:1px dashed #38bdf8;background:transparent;"></span>Municipal Boundary</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Modern Swipe Control (Smooth Slider & High-Performance Clipping) ───────
+class ModernSwipeControl {
+  constructor(map, leftLayers, rightLayers, options = {}) {
+    this.map = map;
+    this.leftLayers = Array.isArray(leftLayers) ? leftLayers : (leftLayers ? [leftLayers] : []);
+    this.rightLayers = Array.isArray(rightLayers) ? rightLayers : (rightLayers ? [rightLayers] : []);
+    this.ratio = typeof options.initialRatio === 'number' ? options.initialRatio : 0.5;
+    this.dividerX = 0;
+    this.isDragging = false;
+
+    this._updateClipBound = () => this.updateClip();
+    this._onResizeBound = () => this.onResize();
+    this._onLayerAddBound = (e) => {
+      if (this.leftLayers.includes(e.layer) || this.rightLayers.includes(e.layer)) {
+        this.updateClip();
+      }
+    };
+
+    this._createDOM();
+    this._bindEvents();
+    this.onResize();
+  }
+
+  _createDOM() {
+    this.container = document.createElement('div');
+    this.container.className = 'custom-swipe-container';
+
+    this.divider = document.createElement('div');
+    this.divider.className = 'custom-swipe-divider';
+    this.divider.setAttribute('title', 'Drag left or right to compare imagery');
+
+    const line = document.createElement('div');
+    line.className = 'custom-swipe-line';
+
+    const handle = document.createElement('div');
+    handle.className = 'custom-swipe-handle';
+    handle.setAttribute('tabindex', '0');
+    handle.setAttribute('role', 'slider');
+    handle.setAttribute('aria-label', 'Satellite comparison divider');
+    handle.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 18 3 12 9 6"></polyline>
+        <polyline points="15 6 21 12 15 18"></polyline>
+      </svg>
+    `;
+
+    this.divider.appendChild(line);
+    this.divider.appendChild(handle);
+    this.container.appendChild(this.divider);
+    this.handle = handle;
+
+    this.map.getContainer().appendChild(this.container);
+  }
+
+  _bindEvents() {
+    const onPointerDown = (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      this.isDragging = true;
+      this.divider.classList.add('dragging');
+
+      if (this.map && this.map.dragging && this.map.dragging.enabled()) {
+        this.map.dragging.disable();
+      }
+
+      const pointerId = e.pointerId;
+      if (this.divider.setPointerCapture && pointerId !== undefined) {
+        try { this.divider.setPointerCapture(pointerId); } catch (_) {}
+      }
+
+      const onPointerMove = (ev) => {
+        if (!this.isDragging || !this.map) return;
+        ev.preventDefault();
+        const rect = this.map.getContainer().getBoundingClientRect();
+        if (rect.width <= 0) return;
+        const x = Math.max(0, Math.min(rect.width, ev.clientX - rect.left));
+        this.ratio = x / rect.width;
+        this.dividerX = Math.round(x);
+        this.updateClip();
+      };
+
+      const onPointerUp = (ev) => {
+        if (!this.isDragging) return;
+        this.isDragging = false;
+        this.divider.classList.remove('dragging');
+
+        if (this.divider.releasePointerCapture && pointerId !== undefined) {
+          try { this.divider.releasePointerCapture(pointerId); } catch (_) {}
+        }
+
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerUp);
+
+        if (this.map && this.map.dragging && !this.map.dragging.enabled()) {
+          this.map.dragging.enable();
+        }
+      };
+
+      window.addEventListener('pointermove', onPointerMove, { passive: false });
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    };
+
+    this.divider.addEventListener('pointerdown', onPointerDown);
+
+    if (this.handle) {
+      this.handle.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          this.setRatio(Math.max(0, this.ratio - 0.05));
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          this.setRatio(Math.min(1, this.ratio + 0.05));
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          this.setRatio(0);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          this.setRatio(1);
+        }
+      });
+    }
+
+    this.map.on('move', this._updateClipBound);
+    this.map.on('zoomend', this._updateClipBound);
+    this.map.on('resize', this._onResizeBound);
+    this.map.on('layeradd', this._onLayerAddBound);
+  }
+
+  onResize() {
+    if (!this.map) return;
+    const size = this.map.getSize();
+    this.dividerX = Math.round(size.x * this.ratio);
+    this.updateClip();
+  }
+
+  setRatio(r) {
+    this.ratio = Math.max(0, Math.min(1, r));
+    this.onResize();
+  }
+
+  getPosition() {
+    return this.dividerX;
+  }
+
+  setLeftLayers(layers) {
+    const next = Array.isArray(layers) ? layers : (layers ? [layers] : []);
+    for (const l of this.leftLayers) {
+      if (!next.includes(l)) this._resetLayerClip(l);
+    }
+    this.leftLayers = next;
+    this.updateClip();
+    return this;
+  }
+
+  setRightLayers(layers) {
+    const next = Array.isArray(layers) ? layers : (layers ? [layers] : []);
+    for (const l of this.rightLayers) {
+      if (!next.includes(l)) this._resetLayerClip(l);
+    }
+    this.rightLayers = next;
+    this.updateClip();
+    return this;
+  }
+
+  _resetLayerClip(layer) {
+    if (layer && layer.getContainer) {
+      const c = layer.getContainer();
+      if (c) c.style.clip = '';
+    }
+  }
+
+  updateClip() {
+    if (!this.map) return;
+    const size = this.map.getSize();
+    if (size.x === 0 || size.y === 0) return;
+
+    this.dividerX = Math.max(0, Math.min(size.x, Math.round(size.x * this.ratio)));
+    if (this.divider) {
+      this.divider.style.left = this.dividerX + 'px';
+    }
+
+    const nw = this.map.containerPointToLayerPoint([0, 0]);
+    const se = this.map.containerPointToLayerPoint(size);
+    const clipX = nw.x + this.dividerX;
+
+    const clipLeft = 'rect(' + [Math.round(nw.y), Math.round(clipX + 1), Math.round(se.y), Math.round(nw.x)].join('px,') + 'px)';
+    const clipRight = 'rect(' + [Math.round(nw.y), Math.round(se.x), Math.round(se.y), Math.round(clipX)].join('px,') + 'px)';
+
+    for (const layer of this.leftLayers) {
+      if (layer && this.map.hasLayer(layer) && layer.getContainer) {
+        const c = layer.getContainer();
+        if (c) c.style.clip = clipLeft;
+      }
+    }
+
+    for (const layer of this.rightLayers) {
+      if (layer && this.map.hasLayer(layer) && layer.getContainer) {
+        const c = layer.getContainer();
+        if (c) c.style.clip = clipRight;
+      }
+    }
+  }
+
+  remove() {
+    if (!this.map) return this;
+    this.map.off('move', this._updateClipBound);
+    this.map.off('zoomend', this._updateClipBound);
+    this.map.off('resize', this._onResizeBound);
+    this.map.off('layeradd', this._onLayerAddBound);
+
+    for (const l of this.leftLayers) this._resetLayerClip(l);
+    for (const l of this.rightLayers) this._resetLayerClip(l);
+
+    if (this.container && this.container.parentNode) {
+      this.container.parentNode.removeChild(this.container);
+    }
+
+    if (this.map.dragging && !this.map.dragging.enabled()) {
+      this.map.dragging.enable();
+    }
+
+    this.map = null;
+    return this;
+  }
+}
+
+// Leaflet compatibility factory
+if (typeof L !== 'undefined') {
+  if (!L.control) L.control = {};
+  L.control.sideBySide = function (leftLayers, rightLayers, options) {
+    return {
+      _control: null,
+      addTo: function (map) {
+        this._control = new ModernSwipeControl(map, leftLayers, rightLayers, options);
+        return this;
+      },
+      setLeftLayers: function (layers) {
+        if (this._control) this._control.setLeftLayers(layers);
+        return this;
+      },
+      setRightLayers: function (layers) {
+        if (this._control) this._control.setRightLayers(layers);
+        return this;
+      },
+      getPosition: function () {
+        return this._control ? this._control.getPosition() : 0;
+      },
+      remove: function () {
+        if (this._control) {
+          this._control.remove();
+          this._control = null;
+        }
+        return this;
+      }
+    };
+  };
+}
+
+const API = 'http://127.0.0.1:8000';
+const CITY_CENTER = [30.705, 76.720];
+
+// ── State ─────────────────────────────────────────────────────
+let leftTileLayer   = null;
+let rightTileLayer  = null;
+let changeMaskLayer = null;
+let changeParcelsLayer = null;
+let boundaryLayer   = null;
+let sbsControl      = null;
+let lastDownloadUrl = null;
+let defaulterMarkers= null;
+let lastDefaulterResult = null;
+
+// ── Map init ──────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true, maxZoom: 20 }).setView(CITY_CENTER, 13);
+
+// OSM basemap (initial backdrop before satellite loads)
+const osmBasemap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+window.addEventListener('load', () => setTimeout(() => map.invalidateSize(), 100));
+
+// ── Dedicated panes (keeps parcel popups clickable) ───────────
+// Parcels + defaulter pins share ONE canvas renderer in their own pane. Mixing a
+// Canvas renderer and an SVG renderer in the same overlay pane makes whichever
+// element is on top swallow the clicks of the other, so parcel popups stop opening.
+map.createPane('parcelsPane');
+map.getPane('parcelsPane').style.zIndex = 450;
+const parcelRenderer = L.canvas({ padding: 0.5, pane: 'parcelsPane' });
+
+// City boundary is drawn above the parcels but is fully click-through.
+map.createPane('boundaryPane');
+map.getPane('boundaryPane').style.zIndex = 460;
+map.getPane('boundaryPane').style.pointerEvents = 'none';
+
+// ── Load boundary ─────────────────────────────────────────────
+fetch('Mohali_boundary.geojson')
+  .then(r => r.json())
+  .then(data => {
+    boundaryLayer = L.geoJSON(data, {
+      pane: 'boundaryPane',
+      interactive: false,
+      style: { color: '#38bdf8', weight: 2, fillOpacity: 0.0, dashArray: '6 4' }
+    }).addTo(map);
+    map.fitBounds(boundaryLayer.getBounds());
+  })
+  .catch(err => console.warn('Boundary load failed:', err));
+
+// Health check
+fetch(API + '/health').catch(() => setStatus('⚠ Backend not running on port 8000'));
+
+// ── Helpers ───────────────────────────────────────────────────
+function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
+
+function showLoading(visible, msg) {
+  document.getElementById('loading-text').textContent = msg || 'Loading…';
+  document.getElementById('loading-overlay').classList.toggle('visible', visible);
+}
+
+function showError(msg) {
+  const t = document.getElementById('error-toast');
+  t.textContent = '⚠ ' + msg;
+  t.classList.add('visible');
+  setTimeout(() => t.classList.remove('visible'), 5000);
+}
+
+function togglePanel(id) { document.getElementById(id).classList.toggle('collapsed'); }
+
+// ── Layer management ──────────────────────────────────────────
+function clearLayers() {
+  if (sbsControl)        { sbsControl.remove(); sbsControl = null; }
+  if (leftTileLayer)     { map.removeLayer(leftTileLayer);     leftTileLayer  = null; }
+  if (rightTileLayer)    { map.removeLayer(rightTileLayer);    rightTileLayer = null; }
+  if (changeMaskLayer)   { map.removeLayer(changeMaskLayer);   changeMaskLayer = null; }
+  if (changeParcelsLayer){ map.removeLayer(changeParcelsLayer);changeParcelsLayer = null; }
+  if (defaulterMarkers)  { map.removeLayer(defaulterMarkers);  defaulterMarkers = null; }
+  // Restore basemap if clearing back to initial state
+  if (!map.hasLayer(osmBasemap)) {
+    osmBasemap.addTo(map);
+  }
+}
+
+function applySwipe(leftUrl, rightUrl, leftAttribution, rightAttribution, leftMaxNative, rightMaxNative) {
+  if (sbsControl) { sbsControl.remove(); sbsControl = null; }
+  if (leftTileLayer) { map.removeLayer(leftTileLayer); leftTileLayer = null; }
+  if (rightTileLayer) { map.removeLayer(rightTileLayer); rightTileLayer = null; }
+
+  // Remove OSM basemap during satellite view so it never leaks when zooming into rooftops
+  if (map.hasLayer(osmBasemap)) {
+    map.removeLayer(osmBasemap);
+  }
+
+  // Left = Year 1 Satellite (auto-upscales tiles beyond maxNativeZoom so roofs remain visible)
+  leftTileLayer = L.tileLayer(leftUrl, {
+    opacity: 1,
+    maxNativeZoom: leftMaxNative || 17,
+    maxZoom: 20,
+    attribution: leftAttribution || ''
+  }).addTo(map);
+
+  // Right = Year 2 Satellite
+  rightTileLayer = L.tileLayer(rightUrl, {
+    opacity: 1,
+    maxNativeZoom: rightMaxNative || 19,
+    maxZoom: 20,
+    attribution: rightAttribution || ''
+  }).addTo(map);
+
+  var rightLayers = [rightTileLayer];
+  if (changeMaskLayer && map.hasLayer(changeMaskLayer)) {
+    rightLayers.push(changeMaskLayer);
+  }
+
+  sbsControl = L.control.sideBySide([leftTileLayer], rightLayers);
+  sbsControl.addTo(map);
+}
+
+// ── API call ──────────────────────────────────────────────────
+async function apiPost(endpoint, body) {
+  const res = await fetch(API + endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'API error');
+  }
+  return res.json();
+}
+
+// ── Main detect function ──────────────────────────────────────
+async function detectChange() {
+  const year1 = parseInt(document.getElementById('sel-year1').value);
+  const year2 = parseInt(document.getElementById('sel-year2').value);
+  const source = document.getElementById('sel-source').value;
+
+  if (year1 >= year2) { alert('Year 1 must be before Year 2.'); return; }
+
+  document.getElementById('btn-detect').disabled = true;
+  document.getElementById('btn-download').disabled = true;
+  document.getElementById('btn-defaulters').disabled = true;
+  document.getElementById('btn-export-csv').disabled = true;
+  document.getElementById('stats-panel').style.display = 'none';
+  document.getElementById('defaulter-panel').classList.remove('visible');
+
+  clearLayers();
+
+  document.getElementById('label-left').textContent  = year1 + ' · Loading…';
+  document.getElementById('label-right').textContent = year2 + ' · Loading…';
+
+  try {
+    // Step 1: Load satellite tiles for both years
+    showLoading(true, `Fetching ${source === 'highres' ? '0.3m High-Resolution' : 'analysis'} satellite imagery for ${year1} and ${year2}…`);
+    setStatus(`Loading ${year1} → ${year2}…`);
+
+    const [rgb1, rgb2] = await Promise.all([
+      apiPost('/rgb-tiles', { year: year1, source: source }),
+      apiPost('/rgb-tiles', { year: year2, source: source }),
+    ]);
+
+    applySwipe(
+      rgb1.tile_url,
+      rgb2.tile_url,
+      rgb1.attribution,
+      rgb2.attribution,
+      rgb1.max_native_zoom,
+      rgb2.max_native_zoom
+    );
+
+    const cap1 = rgb1.capture_date ? ` (${rgb1.capture_date})` : '';
+    const cap2 = rgb2.capture_date ? ` (${rgb2.capture_date})` : '';
+    document.getElementById('label-left').textContent  = `${year1}${cap1}`;
+    document.getElementById('label-right').textContent = `${year2}${cap2} + Change`;
+
+    setStatus('Imagery loaded. Computing change mask in Google Earth Engine…');
+
+    // Step 2: Change mask (rasterized polygons clipped to right side)
+    showLoading(true, 'Extracting and rendering change clusters (> 0.5 ha)…');
+    const tileData = await apiPost('/change-tiles', { year1, year2 });
+
+    changeMaskLayer = L.tileLayer(tileData.tile_url, {
+      opacity: 0.65,
+      maxZoom: 20,
+      maxNativeZoom: 18
+    }).addTo(map);
+    if (sbsControl) {
+      sbsControl.setRightLayers([rightTileLayer, changeMaskLayer]);
+    }
+
+    // Step 3: Fetch cluster statistics
+    const polyData = await apiPost('/change-polygons', { year1, year2 });
+
+    document.getElementById('s-clusters').textContent = (polyData.cluster_count || 0).toLocaleString();
+    document.getElementById('s-period').textContent   = `${year1} → ${year2}`;
+    document.getElementById('stats-panel').style.display = '';
+
+    // Step 4: Extract and render survey parcels intersecting change clusters (Approach A)
+    showLoading(true, 'Extracting and classifying survey parcels in change areas…');
+    try {
+      const parcelsData = await apiPost('/change-parcels', { year1, year2 });
+      if (changeParcelsLayer) {
+        map.removeLayer(changeParcelsLayer);
+        changeParcelsLayer = null;
+      }
+      if (parcelsData && parcelsData.features && parcelsData.features.length > 0) {
+        changeParcelsLayer = L.geoJSON(parcelsData, {
+          // Canvas renders thousands of small parcels far faster than SVG
+          renderer: parcelRenderer,
+          pane: 'parcelsPane',
+          interactive: true,
+          style: function (feature) {
+            const p = feature.properties || {};
+            // Dark outline separates each parcel from its neighbours and from the
+            // red change mask underneath (red Set 1 / grey Exempt fills otherwise blend in).
+            return {
+              color: '#0f172a',
+              weight: 1,
+              opacity: 0.9,
+              fillColor: p.color || '#f97316',
+              fillOpacity: 0.7,
+            };
+          },
+          onEachFeature: function (feature, layer) {
+            const p = feature.properties || {};
+            let statusBadge = '';
+            if (p.category === 'NEW_CONSTRUCTION_DEFAULTER') {
+              statusBadge = `<span style="background:#ea580c;color:#fff;padding:2px 6px;border-radius:4px;font-weight:700;font-size:0.68rem;">NEW CONSTRUCTION (SET 2)</span>`;
+            } else if (p.category === 'LEGACY_BUILT_UP_DEFAULTER') {
+              statusBadge = `<span style="background:#dc2626;color:#fff;padding:2px 6px;border-radius:4px;font-weight:700;font-size:0.68rem;">LEGACY BUILT-UP (SET 1)</span>`;
+            } else if (p.category === 'UNDER_ASSESSED') {
+              statusBadge = `<span style="background:#ca8a04;color:#fff;padding:2px 6px;border-radius:4px;font-weight:700;font-size:0.68rem;">UNDER-ASSESSED</span>`;
+            } else if (p.category === 'EXEMPT') {
+              statusBadge = `<span style="background:#64748b;color:#fff;padding:2px 6px;border-radius:4px;font-weight:700;font-size:0.68rem;">EXEMPT PROPERTY</span>`;
+            } else {
+              statusBadge = `<span style="background:#16a34a;color:#fff;padding:2px 6px;border-radius:4px;font-weight:700;font-size:0.68rem;">IN TAX NET (BUILT-UP)</span>`;
+            }
+
+            const popupContent = `
+              <div style="font-family:Inter,sans-serif;font-size:0.78rem;line-height:1.45;min-width:220px;max-width:300px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;border-bottom:1px solid #334155;padding-bottom:4px;">
+                  <b style="font-size:0.85rem;color:#f8fafc;">UID: ${p.uid || 'N/A'}</b>
+                  ${statusBadge}
+                </div>
+                <div style="margin-bottom:3px;"><span style="color:#94a3b8;">Owner:</span> <b style="color:#f1f5f9;">${p.owner || 'N/A'}</b></div>
+                <div style="margin-bottom:3px;"><span style="color:#94a3b8;">Contact:</span> <b style="color:#f1f5f9;">${p.mobile || 'N/A'}</b></div>
+                <div style="margin-bottom:3px;"><span style="color:#94a3b8;">Ward / Locality:</span> <span style="color:#cbd5e1;">Ward ${p.ward || 'N/A'} (${p.locality || 'N/A'})</span></div>
+                <div style="margin-bottom:3px;"><span style="color:#94a3b8;">Survey Status (2013):</span> <b style="color:#cbd5e1;">${p.present_status || 'N/A'}</b></div>
+                <div style="margin-bottom:3px;"><span style="color:#94a3b8;">Survey Usage:</span> <span style="color:#cbd5e1;">${p.property_usage || p.property_type || 'N/A'}</span></div>
+                <div style="margin-bottom:3px;"><span style="color:#94a3b8;">Tax Net Status:</span> <b style="color:${p.color || '#fff'};">${p.tax_status || 'N/A'}</b></div>
+                ${p.mseva_type ? `<div style="margin-bottom:3px;"><span style="color:#94a3b8;">mSeva Billing:</span> <span style="color:#cbd5e1;">${p.mseva_type}</span></div>` : ''}
+                <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #334155;color:#94a3b8;font-size:0.72rem;line-height:1.35;font-style:italic;">
+                  ${p.reason || ''}
+                </div>
+              </div>
+            `;
+            layer.bindPopup(popupContent);
+
+            layer.on({
+              mouseover: function (e) {
+                const l = e.target;
+                l.setStyle({ weight: 3, fillOpacity: 0.5 });
+                if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                  l.bringToFront();
+                }
+              },
+              mouseout: function (e) {
+                if (changeParcelsLayer) {
+                  changeParcelsLayer.resetStyle(e.target);
+                }
+              }
+            });
+          }
+        });
+
+        if (document.getElementById('chk-parcels').checked) {
+          changeParcelsLayer.addTo(map);
+        }
+      }
+    } catch (pErr) {
+      console.warn('Parcels overlay failed:', pErr);
+    }
+
+    // Bring boundary and markers to front
+    if (boundaryLayer) boundaryLayer.bringToFront();
+    if (defaulterMarkers) defaulterMarkers.bringToFront();
+
+    setStatus(`✅ ${(polyData.cluster_count || 0).toLocaleString()} clusters · ${year1} → ${year2} · Drag slider to compare`);
+
+    // Enable the Identify Defaulters button
+    document.getElementById('btn-defaulters').disabled = false;
+
+    // Step 5: Background shapefile preparation
+    apiPost('/change-shapefile', { year1, year2 }).then(d => {
+      lastDownloadUrl = d.download_url;
+      document.getElementById('btn-download').disabled = false;
+    }).catch(() => {});
+
+  } catch (err) {
+    showError(err.message);
+    setStatus('Error — ' + err.message);
+  } finally {
+    showLoading(false);
+    document.getElementById('btn-detect').disabled = false;
+  }
+}
+
+// ── Layer toggle checkboxes ───────────────────────────────────
+document.getElementById('chk-mask').addEventListener('change', function () {
+  if (!changeMaskLayer) return;
+  if (this.checked) {
+    changeMaskLayer.addTo(map);
+    if (sbsControl && rightTileLayer) {
+      sbsControl.setRightLayers([rightTileLayer, changeMaskLayer]);
+    }
+  } else {
+    map.removeLayer(changeMaskLayer);
+    if (sbsControl && rightTileLayer) {
+      sbsControl.setRightLayers([rightTileLayer]);
+    }
+  }
+});
+
+document.getElementById('chk-parcels').addEventListener('change', function () {
+  if (!changeParcelsLayer) return;
+  this.checked ? changeParcelsLayer.addTo(map) : map.removeLayer(changeParcelsLayer);
+});
+
+document.getElementById('chk-boundary').addEventListener('change', function () {
+  if (!boundaryLayer) return;
+  this.checked ? boundaryLayer.addTo(map) : map.removeLayer(boundaryLayer);
+});
+
+// ── Button wiring ─────────────────────────────────────────────
+document.getElementById('btn-detect').addEventListener('click', detectChange);
+
+document.getElementById('btn-download').addEventListener('click', () => {
+  if (lastDownloadUrl) window.open(lastDownloadUrl, '_blank');
+});
+
+// ── Defaulter & Under-Assessment Identification ─────────────
+document.getElementById('btn-defaulters').addEventListener('click', async () => {
+  const year1 = parseInt(document.getElementById('sel-year1').value);
+  const year2 = parseInt(document.getElementById('sel-year2').value);
+
+  document.getElementById('btn-defaulters').disabled = true;
+  showLoading(true, 'Intersecting vacant parcels with satellite change polygons…');
+  setStatus('Running spatial intersection & identifying Defaulters & Under-Assessed properties…');
+
+  try {
+    const result = await apiPost('/identify-defaulters', { year1, year2 });
+    lastDefaulterResult = result;
+    const s = result.summary;
+
+    // Update panel counters
+    document.getElementById('dc-new').textContent           = (s.total_new_construction_defaulters || 0).toLocaleString();
+    if (document.getElementById('dc-legacy')) {
+      document.getElementById('dc-legacy').textContent      = (s.total_legacy_defaulters || 0).toLocaleString();
+    }
+    document.getElementById('dc-under').textContent         = (s.total_under_assessed || 0).toLocaleString();
+    document.getElementById('dc-total-flagged').textContent = (s.total_flagged || 0).toLocaleString();
+    document.getElementById('dc-candidates').textContent    = (s.total_candidates_checked || 0).toLocaleString();
+    document.getElementById('dc-intax').textContent         = (s.total_parcels || 0).toLocaleString();
+    document.getElementById('defaulter-panel').classList.add('visible');
+
+    // Usage breakdown
+    const usageDiv = document.getElementById('dc-by-usage');
+    if (s.by_usage && Object.keys(s.by_usage).length) {
+      usageDiv.innerHTML = '<div style="font-weight:600;margin-bottom:4px;color:var(--text);">By GIS Usage:</div>' +
+        Object.entries(s.by_usage).map(([k, v]) =>
+          `<div style="display:flex;justify-content:space-between;padding:2px 0;">`+
+          `<span>${k}</span><span style="font-weight:600;color:var(--accent);">${v}</span></div>`
+        ).join('');
+    }
+
+    // Plot markers on map (Orange for Set 2, Yellow for Under-Assessed)
+    if (defaulterMarkers) { map.removeLayer(defaulterMarkers); }
+    defaulterMarkers = L.layerGroup();
+
+    const defaultersList = result.defaulters || result.under_assessed || [];
+    defaultersList.forEach(d => {
+      const isNewConstruction = d.category === 'NEW_CONSTRUCTION_DEFAULTER';
+      const markerColor = isNewConstruction ? '#f97316' : '#eab308'; // Orange for Set 2, Yellow for Under-Assessed
+      const marker = L.circleMarker([d.centroid_lat, d.centroid_lng], {
+        renderer: parcelRenderer,
+        pane: 'parcelsPane',
+        radius: 6,
+        color: markerColor,
+        fillColor: markerColor,
+        fillOpacity: 0.85,
+        weight: 2,
+      });
+
+      const popupTitle = isNewConstruction
+        ? `<b style="color:#f97316;font-size:0.82rem;">🚨 NEW CONSTRUCTION DEFAULTER (SET 2)</b>`
+        : `<b style="color:#eab308;font-size:0.82rem;">⚠ UNDER-ASSESSED IN TAX NET</b>`;
+
+      marker.bindPopup(
+        `<div style="font-family:Inter,sans-serif;font-size:0.76rem;line-height:1.45;min-width:220px;max-width:290px;">` +
+        `<div style="margin-bottom:6px;border-bottom:1px solid #334155;padding-bottom:4px;">${popupTitle}</div>` +
+        `<b>UID:</b> ${d.uid}<br>` +
+        `<b>Ward:</b> ${d.ward}<br>` +
+        `<b>Owner:</b> ${d.owner || 'N/A'}<br>` +
+        `<b>Mobile:</b> ${d.mobile || 'N/A'}<br>` +
+        `<b>Survey Status (2013):</b> ${d.present_status || 'N/A'}<br>` +
+        `<b>GIS Usage:</b> ${d.gis_usage}<br>` +
+        `<b>mSeva Registration:</b> <span style="color:${isNewConstruction ? '#ef4444' : '#22c55e'};font-weight:600;">${isNewConstruction ? 'Unregistered (Suspected)' : (d.mseva_type || 'Zero Tax Land')}</span><br>` +
+        `<b>Demand:</b> ₹${Math.round(d.current_demand).toLocaleString()}<br>` +
+        `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #334155;color:#94a3b8;font-size:0.71rem;font-style:italic;">${d.reason}</div>` +
+        `</div>`
+      );
+      defaulterMarkers.addLayer(marker);
+    });
+
+    defaulterMarkers.addTo(map);
+    if (boundaryLayer) boundaryLayer.bringToFront();
+
+    document.getElementById('btn-export-csv').disabled = false;
+    const totalCount = s.total_flagged || defaultersList.length;
+    setStatus(`🎯 ${totalCount.toLocaleString()} flagged properties (${(s.total_new_construction_defaulters || 0).toLocaleString()} New Construction [Orange] + ${(s.total_under_assessed || 0).toLocaleString()} Under-Assessed [Yellow])`);
+
+  } catch (err) {
+    showError(err.message);
+    setStatus('Error — ' + err.message);
+  } finally {
+    showLoading(false);
+    document.getElementById('btn-defaulters').disabled = false;
+  }
+});
+
+// ── CSV Export ────────────────────────────────────────────────
+document.getElementById('btn-export-csv').addEventListener('click', () => {
+  const defaultersList = lastDefaulterResult ? (lastDefaulterResult.defaulters || lastDefaulterResult.under_assessed || []) : [];
+  if (!defaultersList.length) return;
+
+  const headers = [
+    'UID','Ward','Owner','Mobile','Category','Tax_Status','GIS_Usage_2013',
+    'Baseline_Status_2013','Satellite_Detected_Status',
+    'MSEVA_Billing_Type','Current_Demand_INR','Collected_INR',
+    'Outstanding_INR','Reason','Longitude','Latitude'
+  ];
+
+  const rows = defaultersList.map(d => [
+    `"${d.uid}"`,
+    `"${d.ward}"`,
+    `"${(d.owner || '').replace(/"/g, '""')}"`,
+    `"${d.mobile || ''}"`,
+    `"${d.category || ''}"`,
+    `"${d.tax_status || ''}"`,
+    `"${d.gis_usage}"`,
+    `"${d.present_status}"`,
+    `"${d.category === 'UNDER_ASSESSED' ? 'BUILT_UP (Under-Assessed)' : 'BUILT_UP (New Construction)'}"`,
+    `"${d.mseva_type || 'Unregistered'}"`,
+    d.current_demand || 0,
+    d.collected || 0,
+    d.outstanding || 0,
+    `"${(d.reason || '').replace(/"/g, '""')}"`,
+    d.centroid_lng,
+    d.centroid_lat,
+  ]);
+
+  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mohali_flagged_defaulters_${lastDefaulterResult.year1}_${lastDefaulterResult.year2}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+</script>
+</body>
+</html>
